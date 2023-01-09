@@ -1,0 +1,2088 @@
+options {
+    LOOKAHEAD = 1;
+    CHOICE_AMBIGUITY_CHECK = 2;
+    OTHER_AMBIGUITY_CHECK = 1;
+    STATIC = false;
+    DEBUG_PARSER = false;
+    DEBUG_LOOKAHEAD = false;
+    DEBUG_TOKEN_MANAGER = false;
+    ERROR_REPORTING = true;
+    JAVA_UNICODE_ESCAPE = false;
+    UNICODE_INPUT = false;
+    IGNORE_CASE = false;
+    USER_TOKEN_MANAGER = false;
+    USER_CHAR_STREAM = false;
+    BUILD_PARSER = true;
+    BUILD_TOKEN_MANAGER = true;
+    SANITY_CHECK = true;
+    FORCE_LA_CHECK = false;
+}
+
+PARSER_BEGIN(Analizador)
+package modelo;
+
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.Stack;
+import java.net.URL;
+
+public class Analizador {
+	public static final int SENTENCIA_FUNCION = 1;
+	public static final int SENTENCIA_IF = 2;
+	public static final int SENTENCIA_ELSE = 3;
+	public static final int SENTENCIA_WHILE = 4;
+	public static final int SENTENCIA_FOR = 5;
+
+	public final ArrayList<String> errores = new ArrayList();
+	public final HashMap<String, Simbolo> tablaSimbolos = new HashMap();
+	private AnalizadorSemantico semantico;
+	private CodigoIntermedio intermedio;
+	private Funcion funcionIntermedio;
+	private Sentencia sentenciaAux;
+	private Stack<NotacionPolaca> expresiones = new Stack();
+	private Stack<SentenciaCondicional> condicionales = new Stack();
+	private Stack<SentenciaWhile> ciclosWhile = new Stack();
+	private Stack<SentenciaFor> ciclosFor = new Stack();
+	private CodigoObjeto objeto;
+	private String alcanceActual;
+	private int sentenciaActual;
+	private int numArg;
+
+	private URL urlFile;
+
+	public void setUrlFile(URL urlFile) {
+		this.urlFile = urlFile;
+	}
+}
+PARSER_END(Analizador)
+
+// Signos puntuacion
+TOKEN: {
+	 <L_PARENTHESIS: "(">                                                      // 1
+	|<R_PARENTHESIS: ")">                                                      // 2
+	|<L_BRACE: "{">                                                            // 3
+	|<R_BRACE: "}">                                                            // 4
+	|<COMMA: ",">                                                              // 5
+	|<SEMICOLON: ";">                                                          // 6
+}
+
+// Signos matematicos
+TOKEN: {
+	 <PLUS: "+">                                                               // 7
+	|<MINUS: "-">                                                              // 8
+	|<MULTIPLY: "*">                                                           // 9
+	|<DIVISION: "/">                                                           // 10
+	|<MOD: "%">                                                                // 11
+	|<EQUAL: "=">                                                              // 12
+}
+
+// Signos logicos
+TOKEN: {
+	 <EQUALS: "==">                                                            // 13
+	|<NOT_EQUALS: "!=">                                                        // 14
+	|<AND: "&&">                                                               // 15
+	|<OR: "||">                                                                // 16
+	|<GREATER: ">">                                                            // 17
+	|<GREATER_EQUAL: ">=">                                                     // 18
+	|<LESS: "<">                                                               // 19
+	|<LESS_EQUAL: "<=">                                                        // 20
+}
+
+// Palabras reservadas
+TOKEN: {
+	 <IMPORT: "import">                                                        // 21
+	|<IF: "if">                                                                // 22
+	|<ELSE_IF: "else if">                                                      // 23
+	|<ELSE: "else">                                                            // 24
+	|<WHILE: "while">                                                          // 25
+	|<FOR: "for">                                                              // 26
+	|<VOID: "void">                                                            // 27
+	|<MAIN: "main">                                                            // 28
+	|<RETURN: "return">                                                        // 29
+}
+
+// Funciones integradas
+TOKEN: {
+	 <PRINT: "print">                                                          // 30
+	|<INPUT: "input">                                                          // 31
+}
+
+// Tipos de datos
+TOKEN: {
+	 <INT: "int">                                                              // 32
+	|<FLOAT: "float">                                                          // 33
+	|<CHAR: "char">                                                            // 34
+	|<STRING: "string">                                                        // 35
+	|<BOOL: "bool">                                                            // 36
+}
+
+// Valores de tipos de datos
+TOKEN: {
+	 <INT_V: ("-")?(["0"-"9"])+>                                               // 37
+	|<FLOAT_V: ("-")?(["0"-"9"])+["."](["0"-"9"])+>                            // 38
+	|<CHAR_V: "\'"(["a"-"z", "A"-"Z", "0"-"9", " ", ".", "_", "-"])"\'">       // 49
+	|<STRING_V: "\""(["a"-"z", "A"-"Z", "0"-"9", " ", ".", "_", "-"])+"\"">    // 40
+	|<BOOL_V: "true"|"false">                                                  // 41
+}
+
+// Nombre de variable
+TOKEN: {
+	<IDENTIFIER: (["a"-"z", "A"-"Z", "_"])(["a"-"z", "A"-"Z", "0"-"9", "_"])*> // 42
+}
+
+// Comentarios
+SKIP: {
+	"/*": DentroComentario
+}
+<DentroComentario> SKIP: {
+	"*/": DEFAULT
+}
+<DentroComentario> MORE: {
+	<~[]>
+}
+
+// Tokens a ignorar
+SKIP: {
+	 " "
+	|"\t"
+	|"\n"
+	|"\r"
+	|"\r\n"
+	|"\n\r"
+}
+
+// Manejo de errores
+void L_PARENTHESIS_T(): {} {
+	try {
+		<L_PARENTHESIS>
+	} catch(ParseException ex) {
+		errores.add(
+			ex.toString()
+		);
+	} catch(TokenMgrError ex) {
+		errores.add(
+			ex.toString()
+		);
+	}
+}
+void R_PARENTHESIS_T(): {} {
+	try {
+		<R_PARENTHESIS>
+	} catch(ParseException ex) {
+		errores.add(
+			ex.toString()
+		);
+	} catch(TokenMgrError ex) {
+		errores.add(
+			ex.toString()
+		);
+	}
+}
+void L_BRACE_T(): {} {
+	try {
+		<L_BRACE>
+	} catch(ParseException ex) {
+		errores.add(
+			ex.toString()
+		);
+	} catch(TokenMgrError ex) {
+		errores.add(
+			ex.toString()
+		);
+	}
+}
+void R_BRACE_T(): {} {
+	try {
+		<R_BRACE>
+	} catch(ParseException ex) {
+		errores.add(
+			ex.toString()
+		);
+	} catch(TokenMgrError ex) {
+		errores.add(
+			ex.toString()
+		);
+	}
+}
+void COMMA_T(): {} {
+	try {
+		<COMMA>
+	} catch(ParseException ex) {
+		errores.add(
+			ex.toString()
+		);
+	} catch(TokenMgrError ex) {
+		errores.add(
+			ex.toString()
+		);
+	}
+}
+void SEMICOLON_T(): {} {
+	try {
+		<SEMICOLON>
+	} catch(ParseException ex) {
+		errores.add(
+			ex.toString()
+		);
+	} catch(TokenMgrError ex) {
+		errores.add(
+			ex.toString()
+		);
+	}
+}
+void PLUS_T(): {} {
+	try {
+		<PLUS>
+	} catch(ParseException ex) {
+		errores.add(
+			ex.toString()
+		);
+	} catch(TokenMgrError ex) {
+		errores.add(
+			ex.toString()
+		);
+	}
+}
+void MINUS_T(): {} {
+	try {
+		<MINUS>
+	} catch(ParseException ex) {
+		errores.add(
+			ex.toString()
+		);
+	} catch(TokenMgrError ex) {
+		errores.add(
+			ex.toString()
+		);
+	}
+}
+void MULTIPLY_T(): {} {
+	try {
+		<MULTIPLY>
+	} catch(ParseException ex) {
+		errores.add(
+			ex.toString()
+		);
+	} catch(TokenMgrError ex) {
+		errores.add(
+			ex.toString()
+		);
+	}
+}
+void DIVISION_T(): {} {
+	try {
+		<DIVISION>
+	} catch(ParseException ex) {
+		errores.add(
+			ex.toString()
+		);
+	} catch(TokenMgrError ex) {
+		errores.add(
+			ex.toString()
+		);
+	}
+}
+void MOD_T(): {} {
+	try {
+		<MOD>
+	} catch(ParseException ex) {
+		errores.add(
+			ex.toString()
+		);
+	} catch(TokenMgrError ex) {
+		errores.add(
+			ex.toString()
+		);
+	}
+}
+void EQUAL_T(): {} {
+	try {
+		<EQUAL>
+	} catch(ParseException ex) {
+		errores.add(
+			ex.toString()
+		);
+	} catch(TokenMgrError ex) {
+		errores.add(
+			ex.toString()
+		);
+	}
+}
+void EQUALS_T(): {} {
+	try {
+		<EQUALS>
+	} catch(ParseException ex) {
+		errores.add(
+			ex.toString()
+		);
+	} catch(TokenMgrError ex) {
+		errores.add(
+			ex.toString()
+		);
+	}
+}
+void NOT_EQUALS_T(): {} {
+	try {
+		<NOT_EQUALS>
+	} catch(ParseException ex) {
+		errores.add(
+			ex.toString()
+		);
+	} catch(TokenMgrError ex) {
+		errores.add(
+			ex.toString()
+		);
+	}
+}
+void AND_T(): {} {
+	try {
+		<AND>
+	} catch(ParseException ex) {
+		errores.add(
+			ex.toString()
+		);
+	} catch(TokenMgrError ex) {
+		errores.add(
+			ex.toString()
+		);
+	}
+}
+void OR_T(): {} {
+	try {
+		<OR>
+	} catch(ParseException ex) {
+		errores.add(
+			ex.toString()
+		);
+	} catch(TokenMgrError ex) {
+		errores.add(
+			ex.toString()
+		);
+	}
+}
+void GREATER_T(): {} {
+	try {
+		<GREATER>
+	} catch(ParseException ex) {
+		errores.add(
+			ex.toString()
+		);
+	} catch(TokenMgrError ex) {
+		errores.add(
+			ex.toString()
+		);
+	}
+}
+void GREATER_EQUAL_T(): {} {
+	try {
+		<GREATER_EQUAL>
+	} catch(ParseException ex) {
+		errores.add(
+			ex.toString()
+		);
+	} catch(TokenMgrError ex) {
+		errores.add(
+			ex.toString()
+		);
+	}
+}
+void LESS_T(): {} {
+	try {
+		<LESS>
+	} catch(ParseException ex) {
+		errores.add(
+			ex.toString()
+		);
+	} catch(TokenMgrError ex) {
+		errores.add(
+			ex.toString()
+		);
+	}
+}
+void LESS_EQUAL_T(): {} {
+	try {
+		<LESS_EQUAL>
+	} catch(ParseException ex) {
+		errores.add(
+			ex.toString()
+		);
+	} catch(TokenMgrError ex) {
+		errores.add(
+			ex.toString()
+		);
+	}
+}
+void IMPORT_T(): {} {
+	try {
+		<IMPORT>
+	} catch(ParseException ex) {
+		errores.add(
+			ex.toString()
+		);
+	} catch(TokenMgrError ex) {
+		errores.add(
+			ex.toString()
+		);
+	}
+}
+void IF_T(): {} {
+	try {
+		<IF>
+	} catch(ParseException ex) {
+		errores.add(
+			ex.toString()
+		);
+	} catch(TokenMgrError ex) {
+		errores.add(
+			ex.toString()
+		);
+	}
+}
+void ELSE_IF_T(): {} {
+	try {
+		<ELSE_IF>
+	} catch(ParseException ex) {
+		errores.add(
+			ex.toString()
+		);
+	} catch(TokenMgrError ex) {
+		errores.add(
+			ex.toString()
+		);
+	}
+}
+void ELSE_T(): {} {
+	try {
+		<ELSE>
+	} catch(ParseException ex) {
+		errores.add(
+			ex.toString()
+		);
+	} catch(TokenMgrError ex) {
+		errores.add(
+			ex.toString()
+		);
+	}
+}
+void WHILE_T(): {} {
+	try {
+		<WHILE>
+	} catch(ParseException ex) {
+		errores.add(
+			ex.toString()
+		);
+	} catch(TokenMgrError ex) {
+		errores.add(
+			ex.toString()
+		);
+	}
+}
+void FOR_T(): {} {
+	try {
+		<FOR>
+	} catch(ParseException ex) {
+		errores.add(
+			ex.toString()
+		);
+	} catch(TokenMgrError ex) {
+		errores.add(
+			ex.toString()
+		);
+	}
+}
+void VOID_T(): {} {
+	try {
+		<VOID>
+	} catch(ParseException ex) {
+		errores.add(
+			ex.toString()
+		);
+	} catch(TokenMgrError ex) {
+		errores.add(
+			ex.toString()
+		);
+	}
+}
+void MAIN_T(): {} {
+	try {
+		<MAIN>
+	} catch(ParseException ex) {
+		errores.add(
+			ex.toString()
+		);
+	} catch(TokenMgrError ex) {
+		errores.add(
+			ex.toString()
+		);
+	}
+}
+void RETURN_T(): {} {
+	try {
+		<RETURN>
+	} catch(ParseException ex) {
+		errores.add(
+			ex.toString()
+		);
+	} catch(TokenMgrError ex) {
+		errores.add(
+			ex.toString()
+		);
+	}
+}
+void PRINT_T(): {} {
+	try {
+		<PRINT>
+	} catch(ParseException ex) {
+		errores.add(
+			ex.toString()
+		);
+	} catch(TokenMgrError ex) {
+		errores.add(
+			ex.toString()
+		);
+	}
+}
+void INPUT_T(): {} {
+	try {
+		<INPUT>
+	} catch(ParseException ex) {
+		errores.add(
+			ex.toString()
+		);
+	} catch(TokenMgrError ex) {
+		errores.add(
+			ex.toString()
+		);
+	}
+}
+void INT_T(): {} {
+	try {
+		<INT>
+	} catch(ParseException ex) {
+		errores.add(
+			ex.toString()
+		);
+	} catch(TokenMgrError ex) {
+		errores.add(
+			ex.toString()
+		);
+	}
+}
+void FLOAT_T(): {} {
+	try {
+		<FLOAT>
+	} catch(ParseException ex) {
+		errores.add(
+			ex.toString()
+		);
+	} catch(TokenMgrError ex) {
+		errores.add(
+			ex.toString()
+		);
+	}
+}
+void CHAR_T(): {} {
+	try {
+		<CHAR>
+	} catch(ParseException ex) {
+		errores.add(
+			ex.toString()
+		);
+	} catch(TokenMgrError ex) {
+		errores.add(
+			ex.toString()
+		);
+	}
+}
+void STRING_T(): {} {
+	try {
+		<STRING>
+	} catch(ParseException ex) {
+		errores.add(
+			ex.toString()
+		);
+	} catch(TokenMgrError ex) {
+		errores.add(
+			ex.toString()
+		);
+	}
+}
+void BOOL_T(): {} {
+	try {
+		<BOOL>
+	} catch(ParseException ex) {
+		errores.add(
+			ex.toString()
+		);
+	} catch(TokenMgrError ex) {
+		errores.add(
+			ex.toString()
+		);
+	}
+}
+void INT_V_T(): {} {
+	try {
+		<INT_V>
+	} catch(ParseException ex) {
+		errores.add(
+			ex.toString()
+		);
+	} catch(TokenMgrError ex) {
+		errores.add(
+			ex.toString()
+		);
+	}
+}
+void FLOAT_V_T(): {} {
+	try {
+		<FLOAT_V>
+	} catch(ParseException ex) {
+		errores.add(
+			ex.toString()
+		);
+	} catch(TokenMgrError ex) {
+		errores.add(
+			ex.toString()
+		);
+	}
+}
+void CHAR_V_T(): {} {
+	try {
+		<CHAR_V>
+	} catch(ParseException ex) {
+		errores.add(
+			ex.toString()
+		);
+	} catch(TokenMgrError ex) {
+		errores.add(
+			ex.toString()
+		);
+	}
+}
+void STRING_V_T(): {} {
+	try {
+		<STRING_V>
+	} catch(ParseException ex) {
+		errores.add(
+			ex.toString()
+		);
+	} catch(TokenMgrError ex) {
+		errores.add(
+			ex.toString()
+		);
+	}
+}
+void BOOL_V_T(): {} {
+	try {
+		<BOOL_V>
+	} catch(ParseException ex) {
+		errores.add(
+			ex.toString()
+		);
+	} catch(TokenMgrError ex) {
+		errores.add(
+			ex.toString()
+		);
+	}
+}
+void IDENTIFIER_T(): {} {
+	try {
+		<IDENTIFIER>
+	} catch(ParseException ex) {
+		errores.add(
+			ex.toString()
+		);
+	} catch(TokenMgrError ex) {
+		errores.add(
+			ex.toString()
+		);
+	}
+}
+
+// Analisis sintactico
+void analizar(): {
+	semantico = new AnalizadorSemantico(errores, tablaSimbolos);
+	intermedio = new CodigoIntermedio(errores);
+	objeto = new CodigoObjeto(errores, intermedio, tablaSimbolos);
+	alcanceActual = "";
+	sentenciaActual = SENTENCIA_FUNCION;
+} {
+	( importar() )?
+	( funciones() )*
+	{
+		semantico.mostrarSimbolos();
+		intermedio.crearInstrucciones();
+		System.out.println(intermedio);
+		objeto.compilar(urlFile);
+	}
+	<EOF>
+}
+
+void importar(): {} {
+	IMPORT_T() L_PARENTHESIS_T()
+	STRING_V_T() ( COMMA_T() STRING_V_T() )*
+	R_PARENTHESIS_T()
+}
+
+void tiposFunciones(): {} {
+	 VOID_T()
+	|INT_T()
+	|FLOAT_T()
+	|CHAR_T()
+	|STRING_T()
+	|BOOL_T()
+}
+
+void funciones(): {
+	int tipo;
+} {
+	tiposFunciones()
+	{
+		tipo = token.kind;
+	}
+	( funcion(tipo) | funcionMain(tipo) )
+}
+
+void argumentos(): {
+	int tipo;
+	numArg = 0;
+} {
+	(
+		tiposDatos() {
+			tipo = token.kind;
+		}
+		IDENTIFIER_T() {
+			semantico.addVariable(token, tipo, alcanceActual, ++numArg);
+		}
+		(
+			COMMA_T() tiposDatos() {
+				tipo = token.kind;
+			}
+			IDENTIFIER_T() {
+				semantico.addVariable(token, tipo, alcanceActual, ++numArg);
+			}
+		)*
+	)?
+}
+
+void retorno(int tipo): {} {
+	RETURN_T()
+	{
+		semantico.addVariable(token, tipo, alcanceActual, 0);
+		expresiones.add(
+			new NotacionPolaca()
+		);
+
+		expresiones.peek()
+			.agregarTermino(
+				new Termino(
+					alcanceActual+"_"+token.image,
+					Termino.VALOR
+				)
+			);
+		
+		expresiones.peek()
+			.agregarTermino(
+				new Termino(
+					"=",
+					Termino.IGUAL
+				)
+			);
+	}
+	valores(tipo)
+	{
+		if( !(errores.size() > 0) ) {
+			switch(sentenciaActual) {
+				case SENTENCIA_FUNCION: {
+					funcionIntermedio.agregarSentencia(
+						new SentenciaOperacion(
+							expresiones.pop(),
+							tablaSimbolos
+						)
+					);
+					break;
+				}
+				case SENTENCIA_IF: {
+					condicionales.peek()
+						.agregarSentenciaIf(
+							new SentenciaOperacion(
+								expresiones.pop(),
+								tablaSimbolos
+							)
+						);
+					break;
+				}
+				case SENTENCIA_ELSE: {
+					condicionales.peek()
+						.agregarSentenciaElse(
+							new SentenciaOperacion(
+								expresiones.pop(),
+								tablaSimbolos
+							)
+						);
+					break;
+				}
+				case SENTENCIA_WHILE: {
+					ciclosWhile.peek()
+						.agregarSentencia(
+							new SentenciaOperacion(
+								expresiones.pop(),
+								tablaSimbolos
+							)
+						);
+					break;
+				}
+				case SENTENCIA_FOR: {
+					ciclosFor.peek()
+						.agregarSentencia(
+							new SentenciaOperacion(
+								expresiones.pop(),
+								tablaSimbolos
+							)
+						);
+					break;
+				}
+			}
+		}
+	}
+	SEMICOLON_T()
+}
+
+void funcion(int tipo): {
+	Token func;
+} {
+	IDENTIFIER_T() {
+		func = token;
+		alcanceActual = token.image;
+		semantico.addFuncion(func, tipo);
+		if( !(errores.size() > 0) ) {
+			funcionIntermedio = new Funcion(
+				AnalizadorSemantico.ALCANCE_FUNCION+"_"+func.image
+			);
+			intermedio.agregarFuncion(
+				funcionIntermedio
+			);
+		}
+	}
+	L_PARENTHESIS_T() argumentos() R_PARENTHESIS_T() L_BRACE_T()
+	sentencias()
+	{
+		if(tipo != 27) {
+			retorno(tipo);
+		}
+	}
+	R_BRACE_T()
+}
+
+void funcionMain(int tipo): {
+	Token func;
+} {
+	MAIN_T() {
+		func = token;
+		alcanceActual = token.image;
+		semantico.addFuncion(func, tipo);
+		if( !(errores.size() > 0) ) {
+			funcionIntermedio = new Funcion(
+				AnalizadorSemantico.ALCANCE_FUNCION+"_"+func.image
+			);
+			intermedio.agregarFuncion(
+				funcionIntermedio
+			);
+		}
+	}
+	L_PARENTHESIS_T() R_PARENTHESIS_T() L_BRACE_T()
+	sentencias()
+	{
+		if(tipo != 27) {
+			retorno(tipo);
+		}
+	}
+	R_BRACE_T()
+}
+
+void sentencias(): {
+} {
+	( instrucciones() | ciclos() )*
+}
+
+void instrucciones(): {} {
+	(
+		 variable()
+		|asignacion(true)
+		|imprimir()
+		|leer()
+	) SEMICOLON_T()
+}
+
+void ciclos(): {} {
+	 condicionIf()
+	|cicloWhile()
+	|cicloFor()
+}
+
+void tiposDatos(): {} {
+	 INT_T()
+	|FLOAT_T()
+	|CHAR_T()
+	|STRING_T()
+	|BOOL_T()
+}
+
+void valoresTiposDatos(): {} {
+	 INT_V_T()
+	|FLOAT_V_T()
+	|CHAR_V_T()
+	|STRING_V_T()
+}
+
+int parametrosFuncion(String alcance, Termino termino): {
+	int argsIngresados = 0;
+	int tipo = semantico.obtenerTipoArgumento(alcance, argsIngresados + 1);
+} {
+	{
+		expresiones.add(
+			new NotacionPolaca()
+		);
+
+		expresiones.peek()
+			.agregarTermino(
+				new Termino(
+					semantico.obtenerNombreArgumento(alcance, argsIngresados + 1),
+					Termino.VALOR
+				)
+			);
+		
+		expresiones.peek()
+			.agregarTermino(
+				new Termino(
+					"=",
+					Termino.IGUAL
+				)
+			);
+	}
+	valores(tipo)
+	{
+		termino.agregarParametro(
+			expresiones.pop()
+		);
+		argsIngresados++;
+		tipo = semantico.obtenerTipoArgumento(alcance, argsIngresados + 1);
+	}
+	(
+		COMMA_T()
+		{
+			expresiones.add(
+				new NotacionPolaca()
+			);
+
+			expresiones.peek()
+				.agregarTermino(
+					new Termino(
+						semantico.obtenerNombreArgumento(alcance, argsIngresados + 1),
+						Termino.VALOR
+					)
+				);
+			
+			expresiones.peek()
+				.agregarTermino(
+					new Termino(
+						"=",
+						Termino.IGUAL
+					)
+				);
+		}
+		valores(tipo)
+		{
+			termino.agregarParametro(
+				expresiones.pop()
+			);
+			argsIngresados++;
+			tipo = semantico.obtenerTipoArgumento(alcance, argsIngresados + 1);
+		}
+	)*
+	{ return argsIngresados; }
+}
+
+void simbolo(Integer[] tipos): {
+	Token var;
+	boolean isVar = true;
+	boolean errorFuncion = false;
+	Termino termino;
+	int tipoFuncVar = -1;
+	int totalArgs = -1;
+	int argsIngresados = 0;
+} {
+	IDENTIFIER_T()
+	{
+		var = token;
+		termino = new Termino(
+			alcanceActual + "_" + var.image,
+			Termino.VALOR
+		);
+	}
+	(
+		L_PARENTHESIS_T()
+		{
+			isVar = false;
+			termino = new Termino(
+				AnalizadorSemantico.ALCANCE_FUNCION + "_" + var.image,
+				Termino.FUNCION
+			);
+			// Checar si tiene parametros.
+			totalArgs = semantico.tieneParametros(var);
+			// Si los tiene mandar a llamar a parametrosFuncion()
+			if(totalArgs > 0) {
+				argsIngresados = parametrosFuncion(var.image, termino);
+			}
+			// Si no solo seguir al parenthesis
+		}
+		R_PARENTHESIS_T()
+		{
+			// Checar si no falta o sobra argumentos
+			if(totalArgs != -1) {
+				semantico.comprobarTotalArgumentos(token, totalArgs, argsIngresados);
+			}
+		}
+	)?
+	{
+		if(isVar) {
+			tipoFuncVar = semantico.obtenerTipo(var, alcanceActual);
+		} else {
+			if(totalArgs != -1) {
+				tipoFuncVar = semantico.obtenerTipo(var, "global");
+			}
+		}
+
+		if(tipoFuncVar != -1) {
+			semantico.checarTipoFuncVar(
+				var.image,
+				tipos,
+				tipoFuncVar,
+				var.beginLine,
+				var.beginColumn,
+				isVar
+			);
+			expresiones.peek()
+				.agregarTermino(
+					termino
+				);
+		}
+	}
+}
+
+void signosOperacion(): {} {
+	PLUS_T()
+	{
+		expresiones.peek()
+			.agregarTermino(
+				new Termino(
+					token.image,
+					Termino.SUMA_RESTA
+				)
+			);
+	}
+	|MINUS_T()
+	{
+		expresiones.peek()
+			.agregarTermino(
+				new Termino(
+					token.image,
+					Termino.SUMA_RESTA
+				)
+			);
+	}
+	|MULTIPLY_T()
+	{
+		expresiones.peek()
+			.agregarTermino(
+				new Termino(
+					token.image,
+					Termino.MUL_DIV
+				)
+			);
+	}
+	|DIVISION_T()
+	{
+		expresiones.peek()
+			.agregarTermino(
+				new Termino(
+					token.image,
+					Termino.MUL_DIV
+				)
+			);
+	}
+}
+
+void signosOperacionBool(): {} {
+	 EQUALS_T()
+	|NOT_EQUALS_T()
+	|GREATER_T()
+	|GREATER_EQUAL_T()
+	|LESS_T()
+	|LESS_EQUAL_T()
+}
+
+void valores(int tipo): {} {
+	{
+		if(tipo == 36) {
+			valoresBooleanos();
+		} else {
+			valoresGenerales(tipo);
+		}
+	}
+}
+
+void valoresGenerales(int tipo): {
+	Integer[] tipos = {tipo};
+} {
+	(
+		valoresTiposDatos()
+		{
+			semantico.checarTipoValor(tipo, token);
+			expresiones.peek()
+				.agregarTermino(
+					new Termino(
+						token.image,
+						Termino.VALOR
+					)
+				);
+		}
+		| simbolo( tipos )
+	)
+	(
+		signosOperacion()
+		{
+			semantico.checarTipoOperacion(tipo, token);
+		}
+		(
+			valoresTiposDatos()
+			{
+				semantico.checarTipoValor(tipo, token);
+				expresiones.peek()
+					.agregarTermino(
+						new Termino(
+							token.image,
+							Termino.VALOR
+						)
+					);
+			}
+			| simbolo( tipos )
+		)
+	)*
+}
+
+void valoresBooleanos(): {
+	Integer[] tipos = {32, 33, 34, 35, 36};
+} {
+	BOOL_V_T()
+	{
+		expresiones.peek()
+			.agregarTermino(
+				new Termino(
+					token.image,
+					Termino.VALOR
+				)
+			);
+	}
+	|(
+		(
+			valoresTiposDatos()
+			{
+				expresiones.peek()
+					.agregarTermino(
+						new Termino(
+							token.image,
+							Termino.VALOR
+						)
+					);
+			}
+			| simbolo( tipos )
+		)
+		signosOperacionBool()
+		{
+			expresiones.peek()
+				.agregarTermino(
+					new Termino(
+						token.image,
+						Termino.OP_LOGICO
+					)
+				);
+		}
+		(
+			valoresTiposDatos()
+			{
+				expresiones.peek()
+					.agregarTermino(
+						new Termino(
+							token.image,
+							Termino.VALOR
+						)
+					);
+			}
+			| simbolo( tipos )
+		)
+		(
+			(
+				AND_T()
+				|OR_T()
+			)
+			{
+				expresiones.peek()
+					.agregarTermino(
+						new Termino(
+							token.image,
+							Termino.CONCATENACION_LOG
+						)
+					);
+			}
+			(
+				valoresTiposDatos()
+				{
+					expresiones.peek()
+						.agregarTermino(
+							new Termino(
+								token.image,
+								Termino.VALOR
+							)
+						);
+				}
+				| simbolo( tipos )
+			)
+			signosOperacionBool()
+			{
+				expresiones.peek()
+					.agregarTermino(
+						new Termino(
+							token.image,
+							Termino.OP_LOGICO
+						)
+					);
+			}
+			(
+				valoresTiposDatos()
+				{
+					expresiones.peek()
+						.agregarTermino(
+							new Termino(
+								token.image,
+								Termino.VALOR
+							)
+						);
+				}
+				| simbolo( tipos )
+			)
+		)*
+	)
+}
+
+void variable(): {
+	Token t;
+	int tipo;
+} {
+	tiposDatos() {
+		tipo = token.kind;
+	}
+	(
+		IDENTIFIER_T()
+		{
+			t = token;
+			semantico.addVariable(t, tipo, alcanceActual, 0);
+		}
+		(
+			EQUAL_T()
+			{
+				expresiones.add(
+					new NotacionPolaca()
+				);
+
+				expresiones.peek()
+					.agregarTermino(
+						new Termino(
+							alcanceActual+"_"+t.image,
+							Termino.VALOR
+						)
+					);
+
+				expresiones.peek()
+					.agregarTermino(
+						new Termino(
+							token.image,
+							Termino.IGUAL
+						)
+					);
+			}
+			valores(tipo)
+			{
+				if( !(errores.size() > 0) ) {
+					switch(sentenciaActual) {
+						case SENTENCIA_FUNCION: {
+							funcionIntermedio.agregarSentencia(
+								new SentenciaOperacion(
+									expresiones.pop(),
+									tablaSimbolos
+								)
+							);
+							break;
+						}
+						case SENTENCIA_IF: {
+							condicionales.peek()
+								.agregarSentenciaIf(
+									new SentenciaOperacion(
+										expresiones.pop(),
+										tablaSimbolos
+									)
+								);
+							break;
+						}
+						case SENTENCIA_ELSE: {
+							condicionales.peek()
+								.agregarSentenciaElse(
+									new SentenciaOperacion(
+										expresiones.pop(),
+										tablaSimbolos
+									)
+								);
+							break;
+						}
+						case SENTENCIA_WHILE: {
+							ciclosWhile.peek()
+								.agregarSentencia(
+									new SentenciaOperacion(
+										expresiones.pop(),
+										tablaSimbolos
+									)
+								);
+							break;
+						}
+						case SENTENCIA_FOR: {
+							ciclosFor.peek()
+								.agregarSentencia(
+									new SentenciaOperacion(
+										expresiones.pop(),
+										tablaSimbolos
+									)
+								);
+							break;
+						}
+					}
+				}
+			}
+		)?
+		(
+			COMMA_T() IDENTIFIER_T()
+			{
+				t = token;
+				semantico.addVariable(t, tipo, alcanceActual, 0);
+			}
+			(
+				EQUAL_T()
+				{
+					expresiones.add(
+						new NotacionPolaca()
+					);
+
+					expresiones.peek()
+						.agregarTermino(
+							new Termino(
+								alcanceActual+"_"+t.image,
+								Termino.VALOR
+							)
+						);
+
+					expresiones.peek()
+						.agregarTermino(
+							new Termino(
+								token.image,
+								Termino.IGUAL
+							)
+						);
+					}
+				valores(tipo)
+				{
+					if( !(errores.size() > 0) ) {
+						switch(sentenciaActual) {
+							case SENTENCIA_FUNCION: {
+								funcionIntermedio.agregarSentencia(
+									new SentenciaOperacion(
+										expresiones.pop(),
+										tablaSimbolos
+									)
+								);
+								break;
+							}
+							case SENTENCIA_IF: {
+								condicionales.peek()
+									.agregarSentenciaIf(
+										new SentenciaOperacion(
+											expresiones.pop(),
+											tablaSimbolos
+										)
+									);
+								break;
+							}
+							case SENTENCIA_ELSE: {
+								condicionales.peek()
+									.agregarSentenciaElse(
+										new SentenciaOperacion(
+											expresiones.pop(),
+											tablaSimbolos
+										)
+									);
+								break;
+							}
+							case SENTENCIA_WHILE: {
+								ciclosWhile.peek()
+									.agregarSentencia(
+										new SentenciaOperacion(
+											expresiones.pop(),
+											tablaSimbolos
+										)
+									);
+								break;
+							}
+							case SENTENCIA_FOR: {
+								ciclosFor.peek()
+									.agregarSentencia(
+										new SentenciaOperacion(
+											expresiones.pop(),
+											tablaSimbolos
+										)
+									);
+								break;
+							}
+						}
+					}
+				}
+			)?
+		)*
+	)
+}
+
+void asignacion(boolean agregarSentencia): {
+	Token t;
+	int tipo;
+	int totalArgs = -1;
+	int argsIngresados = 0;
+	Termino termino;
+} {
+	IDENTIFIER_T()
+	{
+		t = token;
+		expresiones.add(
+			new NotacionPolaca()
+		);
+	}
+	(
+		(
+			EQUAL_T()
+			{
+				tipo = semantico.obtenerTipo(t, alcanceActual);
+				expresiones.peek()
+					.agregarTermino(
+						new Termino(
+							alcanceActual+"_"+t.image,
+							Termino.VALOR
+						)
+					);
+				
+				expresiones.peek()
+					.agregarTermino(
+						new Termino(
+							token.image,
+							Termino.IGUAL
+						)
+					);
+			}
+			valores(tipo)
+			{
+				if( !(errores.size() > 0) && agregarSentencia ) {
+					switch(sentenciaActual) {
+						case SENTENCIA_FUNCION: {
+							funcionIntermedio.agregarSentencia(
+								new SentenciaOperacion(
+									expresiones.pop(),
+									tablaSimbolos
+								)
+							);
+							break;
+						}
+						case SENTENCIA_IF: {
+							condicionales.peek()
+								.agregarSentenciaIf(
+									new SentenciaOperacion(
+										expresiones.pop(),
+										tablaSimbolos
+									)
+								);
+							break;
+						}
+						case SENTENCIA_ELSE: {
+							condicionales.peek()
+								.agregarSentenciaElse(
+									new SentenciaOperacion(
+										expresiones.pop(),
+										tablaSimbolos
+									)
+								);
+							break;
+						}
+						case SENTENCIA_WHILE: {
+							ciclosWhile.peek()
+								.agregarSentencia(
+									new SentenciaOperacion(
+										expresiones.pop(),
+										tablaSimbolos
+									)
+								);
+							break;
+						}
+						case SENTENCIA_FOR: {
+							ciclosFor.peek()
+								.agregarSentencia(
+									new SentenciaOperacion(
+										expresiones.pop(),
+										tablaSimbolos
+									)
+								);
+							break;
+						}
+					}
+				}
+			}
+		)
+		|(
+			L_PARENTHESIS_T()
+			{
+				termino = new Termino(
+					AnalizadorSemantico.ALCANCE_FUNCION + "_" + t.image,
+					Termino.FUNCION
+				);
+				totalArgs = semantico.tieneParametros(t);
+				if(totalArgs > 0) {
+					argsIngresados = parametrosFuncion(t.image, termino);
+				}
+			}
+			R_PARENTHESIS_T()
+			{
+				if(totalArgs != -1) {
+					semantico.comprobarTotalArgumentos(token, totalArgs, argsIngresados);
+					if( !(errores.size() > 0) ) {
+						expresiones.peek()
+							.agregarTermino(
+								termino
+							);
+						switch(sentenciaActual) {
+							case SENTENCIA_FUNCION: {
+								funcionIntermedio.agregarSentencia(
+									new SentenciaOperacion(
+										expresiones.pop(),
+										tablaSimbolos
+									)
+								);
+								break;
+							}
+							case SENTENCIA_IF: {
+								condicionales.peek()
+									.agregarSentenciaIf(
+										new SentenciaOperacion(
+											expresiones.pop(),
+											tablaSimbolos
+										)
+									);
+								break;
+							}
+							case SENTENCIA_ELSE: {
+								condicionales.peek()
+									.agregarSentenciaElse(
+										new SentenciaOperacion(
+											expresiones.pop(),
+											tablaSimbolos
+										)
+									);
+								break;
+							}
+							case SENTENCIA_WHILE: {
+								ciclosWhile.peek()
+									.agregarSentencia(
+										new SentenciaOperacion(
+											expresiones.pop(),
+											tablaSimbolos
+										)
+									);
+								break;
+							}
+							case SENTENCIA_FOR: {
+								ciclosFor.peek()
+									.agregarSentencia(
+										new SentenciaOperacion(
+											expresiones.pop(),
+											tablaSimbolos
+										)
+									);
+								break;
+							}
+						}
+					}
+				}
+			}
+		)
+	)
+}
+
+void condicionIf(): {
+	int antSentencia = sentenciaActual;
+} {
+	IF_T()
+	{
+		sentenciaActual = SENTENCIA_IF;
+		expresiones.add(
+			new NotacionPolaca()
+		);
+	}
+	L_PARENTHESIS_T() valoresBooleanos() R_PARENTHESIS_T()
+	{
+		condicionales.add(
+			new SentenciaCondicional(
+				tablaSimbolos
+			)
+		);
+
+		condicionales.peek()
+			.agregarCondicionSentenciaIf(
+				new SentenciaOperacion(
+					expresiones.pop(),
+					tablaSimbolos
+				)
+			);
+	}
+	L_BRACE_T() sentencias() R_BRACE_T()
+	{
+		// Que hacer cuando termina mi condicional if
+		sentenciaActual = antSentencia;
+	}
+	(
+		ELSE_IF_T()
+		{
+			// Que hacer antes de iniciar un else if
+			antSentencia = sentenciaActual;
+			sentenciaActual = SENTENCIA_IF;
+			expresiones.add(
+				new NotacionPolaca()
+			);
+		}
+		L_PARENTHESIS_T() valoresBooleanos() R_PARENTHESIS_T()
+		{
+			condicionales.peek()
+				.agregarCondicionSentenciaIf(
+					new SentenciaOperacion(
+						expresiones.pop(),
+						tablaSimbolos
+					)
+				);
+		}
+		L_BRACE_T() sentencias() R_BRACE_T()
+		{
+			// Que hacer cuando termina un else if
+			sentenciaActual = antSentencia;
+		}
+	)*
+	(
+		ELSE_T()
+		{
+			sentenciaActual = SENTENCIA_ELSE;
+		}
+		L_BRACE_T() sentencias() R_BRACE_T()
+		{
+			// Que hacer cuando termina un else
+			sentenciaActual = antSentencia;
+		}
+	)?
+	{
+		SentenciaCondicional aux = condicionales.pop();
+		switch(sentenciaActual) {
+			case SENTENCIA_FUNCION: {
+				funcionIntermedio.agregarSentencia(
+					aux
+				);
+				break;
+			}
+			case SENTENCIA_IF: {
+				condicionales.peek()
+					.agregarSentenciaIf(
+						aux
+					);
+				break;
+			}
+			case SENTENCIA_ELSE: {
+				condicionales.peek()
+					.agregarSentenciaElse(
+						aux
+					);
+				break;
+			}
+			case SENTENCIA_WHILE: {
+				ciclosWhile.peek()
+					.agregarSentencia(
+						aux
+					);
+				break;
+			}
+			case SENTENCIA_FOR: {
+				ciclosFor.peek()
+					.agregarSentencia(
+						aux
+					);
+				break;
+			}
+		}
+	}
+}
+
+void cicloWhile(): {
+	int antSentencia = sentenciaActual;
+} {
+	WHILE_T()
+	{
+		sentenciaActual = SENTENCIA_WHILE;
+		expresiones.add(
+			new NotacionPolaca()
+		);
+	}
+	L_PARENTHESIS_T() valoresBooleanos() R_PARENTHESIS_T()
+	{
+		ciclosWhile.add(
+			new SentenciaWhile(
+				new SentenciaOperacion(
+					expresiones.pop(),
+					tablaSimbolos
+				),
+				tablaSimbolos
+			)
+		);
+	}
+	L_BRACE_T() sentencias() R_BRACE_T()
+	{
+		sentenciaActual = antSentencia;
+		SentenciaWhile aux = ciclosWhile.pop();
+		switch(sentenciaActual) {
+			case SENTENCIA_FUNCION: {
+				funcionIntermedio.agregarSentencia(
+					aux
+				);
+				break;
+			}
+			case SENTENCIA_IF: {
+				condicionales.peek()
+					.agregarSentenciaIf(
+						aux
+					);
+				break;
+			}
+			case SENTENCIA_ELSE: {
+				condicionales.peek()
+					.agregarSentenciaElse(
+						aux
+					);
+				break;
+			}
+			case SENTENCIA_WHILE: {
+				ciclosWhile.peek()
+					.agregarSentencia(
+						aux
+					);
+				break;
+			}
+			case SENTENCIA_FOR: {
+				ciclosFor.peek()
+					.agregarSentencia(
+						aux
+					);
+				break;
+			}
+		}
+	}
+}
+
+void cicloFor(): {
+	int antSentencia = sentenciaActual;
+	SentenciaOperacion asignacionInicial;
+	SentenciaOperacion condicion;
+	SentenciaOperacion asignacionFinal;
+} {
+	FOR_T()
+	{
+		sentenciaActual = SENTENCIA_FOR;
+	}
+	L_PARENTHESIS_T()
+	asignacion(false)
+	{
+		asignacionInicial = new SentenciaOperacion(
+			expresiones.pop(),
+			tablaSimbolos
+		);
+
+		expresiones.add(
+			new NotacionPolaca()
+		);
+	}
+	SEMICOLON_T()
+	valoresBooleanos()
+	{
+		condicion = new SentenciaOperacion(
+			expresiones.pop(),
+			tablaSimbolos
+		);
+	}
+	SEMICOLON_T()
+	asignacion(false)
+	{
+		asignacionFinal = new SentenciaOperacion(
+			expresiones.pop(),
+			tablaSimbolos
+		);
+	}
+	R_PARENTHESIS_T()
+	{
+		ciclosFor.add(
+			new SentenciaFor(
+				asignacionInicial,
+				condicion,
+				asignacionFinal,
+				tablaSimbolos
+			)
+		);
+	}
+	L_BRACE_T() sentencias() R_BRACE_T()
+	{
+		sentenciaActual = antSentencia;
+		SentenciaFor aux = ciclosFor.pop();
+		switch(sentenciaActual) {
+			case SENTENCIA_FUNCION: {
+				funcionIntermedio.agregarSentencia(
+					aux
+				);
+				break;
+			}
+			case SENTENCIA_IF: {
+				condicionales.peek()
+					.agregarSentenciaIf(
+						aux
+					);
+				break;
+			}
+			case SENTENCIA_ELSE: {
+				condicionales.peek()
+					.agregarSentenciaElse(
+						aux
+					);
+				break;
+			}
+			case SENTENCIA_WHILE: {
+				ciclosWhile.peek()
+					.agregarSentencia(
+						aux
+					);
+				break;
+			}
+			case SENTENCIA_FOR: {
+				ciclosFor.peek()
+					.agregarSentencia(
+						aux
+					);
+				break;
+			}
+		}
+	}
+}
+
+void imprimir(): {
+	Termino termino;
+	Integer[] tipos = {32, 33, 34, 35, 36};
+} {
+	PRINT_T()
+	{
+		termino = new Termino(
+			token.image,
+			Termino.FUNCION
+		);
+
+		expresiones.add(
+			new NotacionPolaca()
+		);
+	}
+	L_PARENTHESIS_T()
+	{
+		expresiones.add(
+			new NotacionPolaca()
+		);
+	}
+	(
+		simbolo( tipos )
+		{
+			if( !(errores.size() > 0) ) {
+				termino.agregarParametro(
+					expresiones.pop()
+				);
+			}
+		}
+	)
+	R_PARENTHESIS_T()
+	{
+		if( !(errores.size() > 0) ) {
+			expresiones.peek()
+				.agregarTermino(
+					termino
+				);
+			
+			switch(sentenciaActual) {
+				case SENTENCIA_FUNCION: {
+					funcionIntermedio.agregarSentencia(
+						new SentenciaOperacion(
+							expresiones.pop(),
+							tablaSimbolos
+						)
+					);
+					break;
+				}
+				case SENTENCIA_IF: {
+					condicionales.peek()
+						.agregarSentenciaIf(
+							new SentenciaOperacion(
+								expresiones.pop(),
+								tablaSimbolos
+							)
+						);
+					break;
+				}
+				case SENTENCIA_ELSE: {
+					condicionales.peek()
+						.agregarSentenciaElse(
+							new SentenciaOperacion(
+								expresiones.pop(),
+								tablaSimbolos
+							)
+						);
+					break;
+				}
+				case SENTENCIA_WHILE: {
+					ciclosWhile.peek()
+						.agregarSentencia(
+							new SentenciaOperacion(
+								expresiones.pop(),
+								tablaSimbolos
+							)
+						);
+					break;
+				}
+				case SENTENCIA_FOR: {
+					ciclosFor.peek()
+						.agregarSentencia(
+							new SentenciaOperacion(
+								expresiones.pop(),
+								tablaSimbolos
+							)
+						);
+					break;
+				}
+			}
+		}
+	}
+}
+
+void leer(): {
+	Termino termino;
+} {
+	INPUT_T()
+	{
+		termino = new Termino(
+			token.image,
+			Termino.FUNCION
+		);
+
+		expresiones.add(
+			new NotacionPolaca()
+		);
+	}
+	L_PARENTHESIS_T()
+	IDENTIFIER_T()
+	{
+		if( !(errores.size() > 0) ) {
+			expresiones.add(
+				new NotacionPolaca()
+			);
+
+			expresiones.peek()
+				.agregarTermino(
+					new Termino(
+						alcanceActual+"_"+token.image,
+						Termino.VALOR
+					)
+				);
+			
+			termino.agregarParametro(
+				expresiones.pop()
+			);
+		}
+	}
+	R_PARENTHESIS_T()
+	{
+		if( !(errores.size() > 0) ) {
+			expresiones.peek()
+				.agregarTermino(
+					termino
+				);
+			
+			switch(sentenciaActual) {
+				case SENTENCIA_FUNCION: {
+					funcionIntermedio.agregarSentencia(
+						new SentenciaOperacion(
+							expresiones.pop(),
+							tablaSimbolos
+						)
+					);
+					break;
+				}
+				case SENTENCIA_IF: {
+					condicionales.peek()
+						.agregarSentenciaIf(
+							new SentenciaOperacion(
+								expresiones.pop(),
+								tablaSimbolos
+							)
+						);
+					break;
+				}
+				case SENTENCIA_ELSE: {
+					condicionales.peek()
+						.agregarSentenciaElse(
+							new SentenciaOperacion(
+								expresiones.pop(),
+								tablaSimbolos
+							)
+						);
+					break;
+				}
+				case SENTENCIA_WHILE: {
+					ciclosWhile.peek()
+						.agregarSentencia(
+							new SentenciaOperacion(
+								expresiones.pop(),
+								tablaSimbolos
+							)
+						);
+					break;
+				}
+				case SENTENCIA_FOR: {
+					ciclosFor.peek()
+						.agregarSentencia(
+							new SentenciaOperacion(
+								expresiones.pop(),
+								tablaSimbolos
+							)
+						);
+					break;
+				}
+			}
+		}
+	}
+}
